@@ -1,0 +1,90 @@
+version: "3.9"
+
+services:
+  # ─────────────────────────────────────────────
+  # PostgreSQL 16 — shared database for both groups
+  # ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-alma_experiment}
+      POSTGRES_USER:     ${POSTGRES_USER:-alma}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alma_secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # SQL files are loaded in alphabetical order by the entrypoint
+      - ./db/alma:/docker-entrypoint-initdb.d/alma:ro
+      - ./db/ecommerce:/docker-entrypoint-initdb.d/ecommerce:ro
+      - ./db/init.sh:/docker-entrypoint-initdb.d/00_init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alma} -d ${POSTGRES_DB:-alma_experiment}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─────────────────────────────────────────────
+  # Group A — Claude + MCP baseline
+  # ─────────────────────────────────────────────
+  group_a:
+    build:
+      context: ./group_a
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alma}:${POSTGRES_PASSWORD:-alma_secret}@postgres:5432/${POSTGRES_DB:-alma_experiment}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./group_a:/app:ro
+      - ./experiments:/experiments:ro
+      - results:/results
+    command: ["python", "-u", "mcp_server.py"]
+
+  # ─────────────────────────────────────────────
+  # Group B — ALMA agent + approval worker
+  # ─────────────────────────────────────────────
+  group_b:
+    build:
+      context: ./group_b
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alma}:${POSTGRES_PASSWORD:-alma_secret}@postgres:5432/${POSTGRES_DB:-alma_experiment}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./group_b:/app:ro
+      - ./experiments:/experiments:ro
+      - results:/results
+    command: ["python", "-u", "approval_worker.py"]
+
+  # ─────────────────────────────────────────────
+  # Runner — executes experiment scenarios
+  # ─────────────────────────────────────────────
+  runner:
+    build:
+      context: ./experiments
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alma}:${POSTGRES_PASSWORD:-alma_secret}@postgres:5432/${POSTGRES_DB:-alma_experiment}
+      GROUP_A_URL: http://group_a:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./experiments:/app:ro
+      - ./group_a:/group_a:ro
+      - ./group_b:/group_b:ro
+      - results:/results
+    profiles:
+      - run  # only starts with: docker-compose --profile run up runner
+
+volumes:
+  pgdata:
+  results:
