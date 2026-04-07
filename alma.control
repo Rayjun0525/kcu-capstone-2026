@@ -1,0 +1,7 @@
+# ALMA — Agent Lifecycle Manager
+comment = 'PostgreSQL-native AI Agent Lifecycle Management framework'
+default_version = '1.0'
+relocatable = false
+requires = 'vector,plpython3u'
+superuser = true
+schema = 'alma_public'
