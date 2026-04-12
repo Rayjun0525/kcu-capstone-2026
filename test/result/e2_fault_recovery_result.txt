@@ -1,0 +1,407 @@
+
+════════════════════════════════════════════════════════════════════════
+  ALMA E2: 장애 복구와 상태 일관성 실험
+════════════════════════════════════════════════════════════════════════
+  DB      : edb / enterprisedb / port 5444
+  모델    : gpt-oss:20b
+  에이전트: e2_test_agent
+  주제    : 실패 후 회복 — 5턴 상담 대화
+  SIGKILL : STEP 3의 fn_submit_result 직전
+
+    STEP 1: 저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+    STEP 2: 주변 사람들에게 실망을 줬다는 생각이 계속 머릿속을 맴돌아요.
+    STEP 3: 다시 시작할 용기가 나지 않습니다. 어떻게 해야 할까요?  ← SIGKILL 시점
+    STEP 4: 선생님 말씀을 들으니 조금 위안이 됩니다. 그래도 두렵습니다.
+    STEP 5: 앞으로 어떤 마음가짐으로 살아가야 할까요?
+
+════════════════════════════════════════════════════════════════════════
+  SETUP. 에이전트 준비
+════════════════════════════════════════════════════════════════════════
+
+  ▶ pg_roles 확인
+    SELECT COUNT(*) FROM pg_roles WHERE rolname = 'e2_test_agent';
+  ◀ 결과: 존재 → 재사용
+
+  ▶ 비밀번호 재설정
+    ALTER ROLE e2_test_agent PASSWORD '***';
+  ◀ 결과: OK
+  【agent_id】 5
+
+════════════════════════════════════════════════════════════════════════
+  세션 생성
+════════════════════════════════════════════════════════════════════════
+
+  ▶ 세션 생성
+    INSERT INTO alma_private.sessions (agent_id, status, goal)
+    VALUES (5, 'active', 'E2 실험 — 실패 회복 상담 대화')
+    RETURNING session_id;
+  ◀ 결과: session_id = 96
+  【session_id】 96
+
+════════════════════════════════════════════════════════════════════════
+  PHASE 1. STEP 1~2 정상 실행
+════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────
+  STEP 1 / 5  │  정상 실행
+────────────────────────────────────────────────────────────────────────
+  질문: 저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+
+  ▶ 태스크 생성
+    INSERT INTO alma_private.tasks (session_id, agent_id, status, input)
+    VALUES (96, 5, 'running', '[질문]')
+    RETURNING task_id;
+  ◀ 결과: task_id = 108
+
+  ▶ fn_next_step 호출
+    SELECT alma_public.fn_next_step(108);
+  【action】 call_llm
+
+  ▶ LLM 호출 (messages 2개)
+  ◀ LLM 응답 (소요: 9390.9 ms):
+    thought   : 사용자가 프로젝트 실패로 인한 자책감과 좌절을 겪고 있다. 그 감정을 인정하고, 실패를 성장의 기회로 바라보는 시각을 제시하며, 스스로를 비난하
+    final_ans : 프로젝트가 기대에 미치지 못했다는 사실이 마음을 무겁게 할 수 있지만, 이는 당신이 도전하고 성장하고 있다는 증거이기도 합니다. 실패를 통해 무
+
+  ▶ fn_submit_result 호출
+    SELECT alma_public.fn_submit_result(108, '[LLM 응답]');
+  【fn_submit_result 반환값】 {'action': 'done', 'output': '프로젝트가 기대에 미치지 못했다는 사실이 마음을 무겁게 할 수 있지만, 이는 당신이 도전하고 성장하고 있다는 증거이기도 합니다. 실패를 통해 무엇이 잘못됐는지, 그리고 앞으로 어떻게 개선할 수 있을지 구체적으로 정리해 보세요. 그리고 자신에게 ‘다음엔 더 잘할 수 있다’는 믿음을 주며, 작은 성공을 하나씩 쌓아가면 자연스럽게 자책감도 줄어들 것입니다. 마지막으로, 이 경험을 통해 배운 점을 기록해 두면, 비슷한 상황이 다시 올 때 큰 도움이 될 것입니다.'}
+
+  ▶ execution_logs (현재 태스크)
+    SELECT step_number, role, content
+    FROM alma_private.execution_logs
+    WHERE task_id = 108 ORDER BY step_number;
+    step  role        content
+    ----  ----------  -------
+       1  assistant   {"thought": "사용자가 프로젝트 실패로 인한 자책감과 좌절을 겪고 있다. 그 감정을 인정하고, 실패를 성장의 기회로 바라
+
+  ▶ 세션 내 전체 태스크 현황
+    SELECT task_id, status, LEFT(input,40)
+    FROM alma_private.tasks
+    WHERE session_id = 96 ORDER BY task_id;
+     task_id  status        input
+     -------  ------        -----
+         108  completed     저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+
+────────────────────────────────────────────────────────────────────────
+  STEP 2 / 5  │  정상 실행
+────────────────────────────────────────────────────────────────────────
+  질문: 주변 사람들에게 실망을 줬다는 생각이 계속 머릿속을 맴돌아요.
+
+  ▶ 태스크 생성
+    INSERT INTO alma_private.tasks (session_id, agent_id, status, input)
+    VALUES (96, 5, 'running', '[질문]')
+    RETURNING task_id;
+  ◀ 결과: task_id = 109
+
+  ▶ fn_next_step 호출
+    SELECT alma_public.fn_next_step(109);
+  【action】 call_llm
+
+  ▶ LLM 호출 (messages 4개)
+  ◀ LLM 응답 (소요: 7843.6 ms):
+    thought   : 사용자가 실망감과 자책감에 시달리고 있으며, 주변 사람들과의 관계에 대한 불안이 지속되고 있다. 공감과 위로를 먼저 전달하고, 실망을 느끼는 감
+    final_ans : 실패를 통해 주변 사람들에게 실망을 주었다는 생각이 들 때, 먼저 그 감정이 자연스러운 반응임을 인정해 보세요. 그 다음, 상황을 객관적으로 바
+
+  ▶ fn_submit_result 호출
+    SELECT alma_public.fn_submit_result(109, '[LLM 응답]');
+  【fn_submit_result 반환값】 {'action': 'done', 'output': '실패를 통해 주변 사람들에게 실망을 주었다는 생각이 들 때, 먼저 그 감정이 자연스러운 반응임을 인정해 보세요. 그 다음, 상황을 객관적으로 바라보고, 무엇이 잘못됐는지 구체적으로 파악해 보세요. 그리고 그 경험을 바탕으로 앞으로 어떻게 개선할 수 있을지 계획을 세우고, 그 계획을 주변 사람들과 솔직히 공유하면 신뢰를 회복하는 데 도움이 됩니다. 마지막으로, 자신에게도 충분한 배려와 격려를 아끼지 말고, 작은 성공을 하나씩 축하하며 자신감을 키워 나가세요.'}
+
+  ▶ execution_logs (현재 태스크)
+    SELECT step_number, role, content
+    FROM alma_private.execution_logs
+    WHERE task_id = 109 ORDER BY step_number;
+    step  role        content
+    ----  ----------  -------
+       1  assistant   {"thought": "사용자가 실망감과 자책감에 시달리고 있으며, 주변 사람들과의 관계에 대한 불안이 지속되고 있다. 공감과 위
+
+  ▶ 세션 내 전체 태스크 현황
+    SELECT task_id, status, LEFT(input,40)
+    FROM alma_private.tasks
+    WHERE session_id = 96 ORDER BY task_id;
+     task_id  status        input
+     -------  ------        -----
+         108  completed     저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+         109  completed     주변 사람들에게 실망을 줬다는 생각이 계속 머릿속을 맴돌아요.
+
+════════════════════════════════════════════════════════════════════════
+  PHASE 2. STEP 3 — SIGKILL 장애 주입
+════════════════════════════════════════════════════════════════════════
+  자식 프로세스로 STEP 3 시작
+  fn_next_step() + LLM 호출 완료 후 파이프 신호 → 메인이 SIGKILL
+
+  ▶ 자식 프로세스 pid=401 시작, 파이프 신호 대기...
+
+  ★ 파이프 신호 수신!
+    step     : 3
+    task_id  : 110
+    LLM 응답 : {"thought":"사용자가 실패 후 실망과 자책감에 시달리며, 다시 시작할 용기가 없다고 표현했습니다. 이는 감정적 부담과 불안이 크게 작용...
+    → fn_submit_result 미호출 상태 확인
+
+  ★ SIGKILL 발사: 05:47:05.381  (pid=401)
+  ★ 자식 프로세스 종료 확인: exitcode=-9
+
+════════════════════════════════════════════════════════════════════════
+  PHASE 3. SIGKILL 직후 DB 상태 검증
+════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────
+  DB 상태 스냅샷: SIGKILL 직후
+────────────────────────────────────────────────────────────────────────
+
+  ▶ tasks 상태 조회
+    SELECT task_id, status, LEFT(input,40)
+    FROM alma_private.tasks
+    WHERE session_id = 96 ORDER BY task_id;
+     task_id  status        input
+     -------  ------        -----
+         108  completed     저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+         109  completed     주변 사람들에게 실망을 줬다는 생각이 계속 머릿속을 맴돌아요.
+         110  running       다시 시작할 용기가 나지 않습니다. 어떻게 해야 할까요?
+
+  ▶ execution_logs 행 수 확인
+    SELECT t.task_id, COUNT(el.log_id) AS log_count
+    FROM alma_private.tasks t
+    LEFT JOIN alma_private.execution_logs el ON el.task_id = t.task_id
+    WHERE t.session_id = 96
+    GROUP BY t.task_id ORDER BY t.task_id;
+     task_id   log_count
+         108           1
+         109           1
+         110           0
+
+  ▶ SIGKILL된 태스크 상태 직접 조회
+    SELECT task_id, status
+    FROM alma_private.tasks
+    WHERE task_id = 110;
+  【task_id】 110
+  【status】 running
+
+  ▶ SIGKILL된 태스크의 execution_logs 행 수
+    SELECT COUNT(*) FROM alma_private.execution_logs
+    WHERE task_id = 110;
+  ◀ 결과: 0행
+
+  ✅ 검증 (a): execution_logs에 STEP 3 기록 없음
+              fn_submit_result 미호출 → PostgreSQL 트랜잭션 보호 확인
+  ✅ 검증 (b): tasks.status = 'running' (워커 사망 후 상태 잔존)
+              재시작 워커가 이 태스크를 감지하고 재개 가능
+
+════════════════════════════════════════════════════════════════════════
+  PHASE 4. 워커 재시작 — running 태스크 감지 및 STEP 3 재개
+════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────
+  워커 재시작 — running 상태 태스크 감지 및 재개
+────────────────────────────────────────────────────────────────────────
+
+  ▶ running 상태 태스크 탐색
+    SELECT t.task_id, t.status, t.input
+    FROM alma_private.tasks t
+    WHERE t.session_id = 96
+      AND t.status = 'running'
+    ORDER BY t.task_id;
+  ◀ 발견: task_id=110  status=running
+          input=다시 시작할 용기가 나지 않습니다. 어떻게 해야 할까요?
+  【재개 대상 task_id】 110
+
+  ▶ 해당 태스크의 execution_logs 행 수
+    SELECT COUNT(*) FROM alma_private.execution_logs
+    WHERE task_id = 110;
+  ◀ 결과: 0행 — fn_submit_result 미호출 확인 (0이어야 정상)
+
+  ▶ fn_next_step(110) 재호출 — DB가 최신 상태 기준으로 지시 반환
+
+  ▶ fn_next_step 재호출
+    SELECT alma_public.fn_next_step(110);
+  【fn_next_step action】 call_llm
+
+  ▶ LLM에 전달되는 messages (6개):
+
+    [1] role = SYSTEM
+    ────────────────────────────────────────────────────────────────
+      당신은 인생 상담가입니다. 상대방의 이야기에 공감하며 진심 어린 조언을 건넵니다.
+      이전 대화 흐름을 이어받아 자연스럽게 답하세요.
+      반드시 JSON으로만 응답하세요.
+
+      응답 형식:
+      {"thought":"[공감과 분석 과정]","action":"finish","final_answer":"[따뜻한 조언 3~4문장]"}
+    ────────────────────────────────────────────────────────────────
+
+    [2] role = USER
+      저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+
+    [3] role = ASSISTANT
+      프로젝트가 기대에 미치지 못했다는 사실이 마음을 무겁게 할 수 있지만, 이는 당신이 도전하고 성장하고 있다는 증거이기도 합니다. 실패를 통해 무엇이 잘못됐는지, 그리고 앞으로 어떻게 개선할 수 있을지 구체적으로 정리해 보세요. 그리고 자신에게 ‘다음엔 더 잘할 수 있다’는 믿음을 주며, 작은 성공을 하나씩 쌓아가면 자연스럽게 자책감도 줄어들 것입니다. 마지막으로, 이 경험을 통해 배운 점을 기록해 두면, 비슷한 상황이 다시 올 때 큰 도움이 될 것입니다.
+
+    [4] role = USER
+      주변 사람들에게 실망을 줬다는 생각이 계속 머릿속을 맴돌아요.
+
+    [5] role = ASSISTANT
+      실패를 통해 주변 사람들에게 실망을 주었다는 생각이 들 때, 먼저 그 감정이 자연스러운 반응임을 인정해 보세요. 그 다음, 상황을 객관적으로 바라보고, 무엇이 잘못됐는지 구체적으로 파악해 보세요. 그리고 그 경험을 바탕으로 앞으로 어떻게 개선할 수 있을지 계획을 세우고, 그 계획을 주변 사람들과 솔직히 공유하면 신뢰를 회복하는 데 도움이 됩니다. 마지막으로, 자신에게도 충분한 배려와 격려를 아끼지 말고, 작은 성공을 하나씩 축하하며 자신감을 키워 나가세요.
+
+    [6] role = USER
+      다시 시작할 용기가 나지 않습니다. 어떻게 해야 할까요?
+
+  ▶ LLM 재호출
+    provider : ollama
+    model    : gpt-oss:20b
+
+  ◀ LLM 응답 (소요: 6707.0 ms):
+    raw: {"thought":"사용자가 실패 후 실망과 자책감에 시달리며, 다시 시작할 용기가 없다고 표현했습니다. 이는 감정적 부담과 불안이 크게 작용하고 있음을 시사합니다. 용기를 회복하려면 작은 단계로 목표를 재설정하고, 과거의 성공 경험을 떠올리며 자신을 격려하는 것이 도움이 됩니다. 또한, 주변의 지지와 피드백을 받아들이는 것이 회복에 큰 힘이 됩니다.","action":"finish","final_answer":"실패를 통해 배운 점을 작은 성공으로 재구성해 보세요. 한 번에 큰 변화를 기대하기보다, 작은 목표를 세우고 차근차근 달성해 나가면 자신감이 서서히 회복됩니다. 주변 사람들의 격려와 조언을 받아들이며, 자신에게도 부드러운 말을 건네는 것이 중요합니다. 이렇게 작은 단계들을 쌓아가다 보면, 다시 시작할 용기가 자연스럽게 생길 것입니다."}
+
+    thought   : 사용자가 실패 후 실망과 자책감에 시달리며, 다시 시작할 용기가 없다고 표현했습니다. 이는 감정적 부담과 불안이 크게 작용하고 있음을 시사합니다. 용기를 회복하려면 작은 단계로 목표를 재설정하고, 과거의 성공 경험을 떠올리며 자신을 격려하는 것이 도움이 됩니다. 또한, 주변의 지지와 피드백을 받아들이는 것이 회복에 큰 힘이 됩니다.
+    action    : finish
+    final_ans : 실패를 통해 배운 점을 작은 성공으로 재구성해 보세요. 한 번에 큰 변화를 기대하기보다, 작은 목표를 세우고 차근차근 달성해 나가면 자신감이 서서히 회복됩니다. 주변 사람들의 격려와 조언을 받아들이며, 자신에게도 부드러운 말을 건네는 것이 중요합니다. 이렇게 작은 단계들을 쌓아가다 보면, 다시 시작할 용기가 자연스럽게 생길 것입니다.
+
+  ▶ fn_submit_result 호출
+    SELECT alma_public.fn_submit_result(110, '[LLM 응답]');
+  【fn_submit_result 반환값】 {'action': 'done', 'output': '실패를 통해 배운 점을 작은 성공으로 재구성해 보세요. 한 번에 큰 변화를 기대하기보다, 작은 목표를 세우고 차근차근 달성해 나가면 자신감이 서서히 회복됩니다. 주변 사람들의 격려와 조언을 받아들이며, 자신에게도 부드러운 말을 건네는 것이 중요합니다. 이렇게 작은 단계들을 쌓아가다 보면, 다시 시작할 용기가 자연스럽게 생길 것입니다.'}
+
+  ▶ 재개 후 execution_logs 행 수
+    SELECT COUNT(*) FROM alma_private.execution_logs
+    WHERE task_id = 110;
+  ◀ 결과: 1행
+  ✅ 검증 (c): 재시작 후 execution_logs에 1행 기록됨
+              fn_next_step()부터 정상 재개 완료
+
+════════════════════════════════════════════════════════════════════════
+  PHASE 5. STEP 4~5 정상 실행 (복구 후 대화 계속)
+════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────
+  STEP 4 / 5  │  정상 실행
+────────────────────────────────────────────────────────────────────────
+  질문: 선생님 말씀을 들으니 조금 위안이 됩니다. 그래도 두렵습니다.
+
+  ▶ 태스크 생성
+    INSERT INTO alma_private.tasks (session_id, agent_id, status, input)
+    VALUES (96, 5, 'running', '[질문]')
+    RETURNING task_id;
+  ◀ 결과: task_id = 111
+
+  ▶ fn_next_step 호출
+    SELECT alma_public.fn_next_step(111);
+  【action】 call_llm
+
+  ▶ LLM 호출 (messages 8개)
+  ◀ LLM 응답 (소요: 4770.0 ms):
+    thought   : 상대방이 두려움을 느끼는 상황을 공감하며, 작은 단계와 지원 체계의 중요성을 강조한다.
+    final_ans : 두려움은 새로운 시작 앞에서 자연스러운 감정이야. 먼저 작은 목표를 세워 한 걸음씩 나아가면, 점차 자신감이 생겨. 주변 사람들의 격려를 받아들
+
+  ▶ fn_submit_result 호출
+    SELECT alma_public.fn_submit_result(111, '[LLM 응답]');
+  【fn_submit_result 반환값】 {'action': 'done', 'output': '두려움은 새로운 시작 앞에서 자연스러운 감정이야. 먼저 작은 목표를 세워 한 걸음씩 나아가면, 점차 자신감이 생겨. 주변 사람들의 격려를 받아들이고, 스스로에게 부드러운 말을 건네며, 작은 성공을 축하해 보자. 그렇게 차근차근 나아가다 보면 두려움은 점점 사라질 거야.'}
+
+  ▶ execution_logs (현재 태스크)
+    SELECT step_number, role, content
+    FROM alma_private.execution_logs
+    WHERE task_id = 111 ORDER BY step_number;
+    step  role        content
+    ----  ----------  -------
+       1  assistant   {"thought": "상대방이 두려움을 느끼는 상황을 공감하며, 작은 단계와 지원 체계의 중요성을 강조한다.", "action"
+
+  ▶ 세션 내 전체 태스크 현황
+    SELECT task_id, status, LEFT(input,40)
+    FROM alma_private.tasks
+    WHERE session_id = 96 ORDER BY task_id;
+     task_id  status        input
+     -------  ------        -----
+         108  completed     저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+         109  completed     주변 사람들에게 실망을 줬다는 생각이 계속 머릿속을 맴돌아요.
+         110  completed     다시 시작할 용기가 나지 않습니다. 어떻게 해야 할까요?
+         111  completed     선생님 말씀을 들으니 조금 위안이 됩니다. 그래도 두렵습니다.
+
+────────────────────────────────────────────────────────────────────────
+  STEP 5 / 5  │  정상 실행
+────────────────────────────────────────────────────────────────────────
+  질문: 앞으로 어떤 마음가짐으로 살아가야 할까요?
+
+  ▶ 태스크 생성
+    INSERT INTO alma_private.tasks (session_id, agent_id, status, input)
+    VALUES (96, 5, 'running', '[질문]')
+    RETURNING task_id;
+  ◀ 결과: task_id = 112
+
+  ▶ fn_next_step 호출
+    SELECT alma_public.fn_next_step(112);
+  【action】 call_llm
+
+  ▶ LLM 호출 (messages 10개)
+  ◀ LLM 응답 (소요: 4958.1 ms):
+    thought   : User seeks guidance on mindset moving forward. Provide empathetic, encouraging a
+    final_ans : 앞으로는 실패를 배움의 기회로 삼아, 작은 성공을 통해 자신감을 키워가세요. 현재의 감정에 솔직히 대면하면서도, 스스로에게 부드러운 격려를 잊지
+
+  ▶ fn_submit_result 호출
+    SELECT alma_public.fn_submit_result(112, '[LLM 응답]');
+  【fn_submit_result 반환값】 {'action': 'done', 'output': '앞으로는 실패를 배움의 기회로 삼아, 작은 성공을 통해 자신감을 키워가세요. 현재의 감정에 솔직히 대면하면서도, 스스로에게 부드러운 격려를 잊지 마세요. 주변 사람들과 열린 대화를 통해 지지와 조언을 받아들이고, 필요할 때는 도움을 요청하세요. 이렇게 꾸준히 성장하려는 마음가짐을 유지하면 두려움도 자연스럽게 줄어들 것입니다.'}
+
+  ▶ execution_logs (현재 태스크)
+    SELECT step_number, role, content
+    FROM alma_private.execution_logs
+    WHERE task_id = 112 ORDER BY step_number;
+    step  role        content
+    ----  ----------  -------
+       1  assistant   {"thought": "User seeks guidance on mindset moving forward. Provide empa
+
+  ▶ 세션 내 전체 태스크 현황
+    SELECT task_id, status, LEFT(input,40)
+    FROM alma_private.tasks
+    WHERE session_id = 96 ORDER BY task_id;
+     task_id  status        input
+     -------  ------        -----
+         108  completed     저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+         109  completed     주변 사람들에게 실망을 줬다는 생각이 계속 머릿속을 맴돌아요.
+         110  completed     다시 시작할 용기가 나지 않습니다. 어떻게 해야 할까요?
+         111  completed     선생님 말씀을 들으니 조금 위안이 됩니다. 그래도 두렵습니다.
+         112  completed     앞으로 어떤 마음가짐으로 살아가야 할까요?
+
+════════════════════════════════════════════════════════════════════════
+  최종 리포트
+════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────
+  세션 전체 execution_logs
+────────────────────────────────────────────────────────────────────────
+
+  ▶ 전체 로그
+    SELECT t.task_id, el.step_number, el.role, el.content
+    FROM alma_private.execution_logs el
+    JOIN alma_private.tasks t ON t.task_id = el.task_id
+    WHERE t.session_id = 96
+    ORDER BY t.task_id, el.step_number;
+      task  step  role        content
+    ------  ----  ----------  -------
+       108     1  assistant   {"thought": "사용자가 프로젝트 실패로 인한 자책감과 좌절을 겪고 있다. 그 감정을 인정하고, 실패를
+       109     1  assistant   {"thought": "사용자가 실망감과 자책감에 시달리고 있으며, 주변 사람들과의 관계에 대한 불안이 지속되고
+       110     1  assistant   {"thought": "사용자가 실패 후 실망과 자책감에 시달리며, 다시 시작할 용기가 없다고 표현했습니다. 이
+       111     1  assistant   {"thought": "상대방이 두려움을 느끼는 상황을 공감하며, 작은 단계와 지원 체계의 중요성을 강조한다."
+       112     1  assistant   {"thought": "User seeks guidance on mindset moving forward. Pr
+
+────────────────────────────────────────────────────────────────────────
+  최종 태스크 현황
+────────────────────────────────────────────────────────────────────────
+
+  ▶ 최종 태스크 현황
+    SELECT task_id, status, LEFT(input,45)
+    FROM alma_private.tasks
+    WHERE session_id = 96 ORDER BY task_id;
+     task_id  status        input
+     -------  ------        -----
+         108  completed     저는 최근 중요한 프로젝트에서 실패했습니다. 많이 자책하게 됩니다.
+         109  completed     주변 사람들에게 실망을 줬다는 생각이 계속 머릿속을 맴돌아요.
+         110  completed     다시 시작할 용기가 나지 않습니다. 어떻게 해야 할까요?  ← SIGKILL 후 재개
+         111  completed     선생님 말씀을 들으니 조금 위안이 됩니다. 그래도 두렵습니다.
+         112  completed     앞으로 어떤 마음가짐으로 살아가야 할까요?
+
+────────────────────────────────────────────────────────────────────────
+  검증 요약
+────────────────────────────────────────────────────────────────────────
+  (a) SIGKILL 직후 execution_logs: STEP 3 기록 없음 → 트랜잭션 보호 확인
+  (b) SIGKILL 직후 tasks.status  : running 상태 잔존 → 재시작 워커 감지 가능
+  (c) 재시작 후 재개              : fn_next_step()부터 STEP 3 정상 완료
+  (d) 대화 연속성                : STEP 4~5에서 STEP 3 내용이 히스토리로 유지됨
+
+════════════════════════════════════════════════════════════════════════
+  실험 완료  |  에이전트: e2_test_agent (id=5) 유지됨
+  session_id=96
+════════════════════════════════════════════════════════════════════════
