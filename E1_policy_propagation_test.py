@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ALMA 실험 E1: 정책 전파 지연 (Policy Propagation Latency)
+argo 실험 E1: 정책 전파 지연 (Policy Propagation Latency)
 ==========================================================
 DBaaCP 핵심 검증: DB의 system_prompt UPDATE가 다음 스텝에 즉시 반영되는가?
 
@@ -28,11 +28,11 @@ from datetime import datetime
 # 설정
 # ══════════════════════════════════════════════════════════════════════════════
 DB_CONFIG = dict(
-    dbname  = os.getenv("DB_NAME",     "edb"),
-    user    = os.getenv("DB_USER",     "enterprisedb"),
+    dbname  = os.getenv("DB_NAME",     "postgres"),
+    user    = os.getenv("DB_USER",     "postgres"),
     password= os.getenv("DB_PASSWORD", ""),
     host    = os.getenv("DB_HOST",     "localhost"),
-    port    = int(os.getenv("DB_PORT", "5444")),
+    port    = int(os.getenv("DB_PORT", "5432")),
 )
 AGENT_ROLE = "e1_test_agent"
 AGENT_PW   = os.getenv("AGENT_PASSWORD", "e1_test_pw_2024")
@@ -137,22 +137,22 @@ def setup_agent():
             "system_prompt": PROMPT_SCHOLAR,
             "max_steps": 20, "max_retries": 2, "password": AGENT_PW,
         }
-        cur.execute("SELECT alma_public.create_agent(%s, %s::jsonb)",
+        cur.execute("SELECT argo_public.create_agent(%s, %s::jsonb)",
                     (AGENT_ROLE, json.dumps(config)))
         res = cur.fetchone()
         sql_block("에이전트 생성",
-                  f"SELECT alma_public.create_agent('{AGENT_ROLE}', '{{...}}'::jsonb);",
+                  f"SELECT argo_public.create_agent('{AGENT_ROLE}', '{{...}}'::jsonb);",
                   list(res.values())[0])
 
     # 항상 학자로 초기화
     cur.execute("""
-        UPDATE alma_private.agent_profiles SET system_prompt = %s
+        UPDATE argo_private.agent_profiles SET system_prompt = %s
         WHERE profile_id = (
-            SELECT profile_id FROM alma_private.agent_profile_assignments
+            SELECT profile_id FROM argo_private.agent_profile_assignments
             WHERE role_name = %s)
     """, (PROMPT_SCHOLAR, AGENT_ROLE))
     sql_block("system_prompt 초기화 → 철학과 교수(학자)",
-              f"UPDATE alma_private.agent_profiles\n"
+              f"UPDATE argo_private.agent_profiles\n"
               f"SET system_prompt = '[학자 프롬프트]'\n"
               f"WHERE role_name = '{AGENT_ROLE}';", "1 row updated")
 
@@ -160,17 +160,17 @@ def setup_agent():
     cur.execute("""
         SELECT ap.name, ap.agent_role, ap.system_prompt, ap.max_steps,
                lc.model_name, lc.provider
-        FROM alma_private.agent_profiles ap
-        JOIN alma_private.agent_profile_assignments apa ON apa.profile_id = ap.profile_id
-        JOIN alma_private.llm_configs lc ON lc.llm_config_id = apa.llm_config_id
+        FROM argo_private.agent_profiles ap
+        JOIN argo_private.agent_profile_assignments apa ON apa.profile_id = ap.profile_id
+        JOIN argo_private.llm_configs lc ON lc.llm_config_id = apa.llm_config_id
         WHERE apa.role_name = %s""", (AGENT_ROLE,))
     p = cur.fetchone()
     sql_block("현재 프로파일 조회", """
         SELECT ap.name, ap.agent_role, ap.system_prompt, ap.max_steps,
                lc.model_name, lc.provider
-        FROM alma_private.agent_profiles ap
-        JOIN alma_private.agent_profile_assignments apa ON apa.profile_id = ap.profile_id
-        JOIN alma_private.llm_configs lc ON lc.llm_config_id = apa.llm_config_id
+        FROM argo_private.agent_profiles ap
+        JOIN argo_private.agent_profile_assignments apa ON apa.profile_id = ap.profile_id
+        JOIN argo_private.llm_configs lc ON lc.llm_config_id = apa.llm_config_id
         WHERE apa.role_name = 'e1_test_agent';""")
     kv("name",         p["name"])
     kv("agent_role",   p["agent_role"])
@@ -178,7 +178,7 @@ def setup_agent():
     kv("max_steps",    p["max_steps"])
     kv("system_prompt(첫 줄)", p["system_prompt"].strip().splitlines()[0])
 
-    cur.execute("SELECT agent_id FROM alma_private.agent_meta WHERE role_name = %s", (AGENT_ROLE,))
+    cur.execute("SELECT agent_id FROM argo_private.agent_meta WHERE role_name = %s", (AGENT_ROLE,))
     agent_id = cur.fetchone()["agent_id"]
     kv("agent_id", agent_id)
     op.close()
@@ -210,12 +210,12 @@ def call_llm(llm_config, messages):
 def print_exec_logs(op_cur, task_id, session_id):
     op_cur.execute("""
         SELECT step_number, role, content
-        FROM alma_private.execution_logs
+        FROM argo_private.execution_logs
         WHERE task_id = %s ORDER BY step_number""", (task_id,))
     logs = op_cur.fetchall()
     sql_block("execution_logs (현재 태스크)",
               f"SELECT step_number, role, content\n"
-              f"FROM alma_private.execution_logs\n"
+              f"FROM argo_private.execution_logs\n"
               f"WHERE task_id = {task_id} ORDER BY step_number;")
     print(f"    {'step':>4}  {'role':<10}  content")
     print(f"    {'----':>4}  {'----------':<10}  {'-------'}")
@@ -228,12 +228,12 @@ def print_exec_logs(op_cur, task_id, session_id):
 
     op_cur.execute("""
         SELECT task_id, status, LEFT(input, 45) AS input_short
-        FROM alma_private.tasks
+        FROM argo_private.tasks
         WHERE session_id = %s ORDER BY task_id""", (session_id,))
     tasks = op_cur.fetchall()
     sql_block("세션 내 전체 태스크 현황",
               f"SELECT task_id, status, LEFT(input,45)\n"
-              f"FROM alma_private.tasks\n"
+              f"FROM argo_private.tasks\n"
               f"WHERE session_id = {session_id} ORDER BY task_id;")
     print(f"    {'task_id':>8}  {'status':<12}  input")
     print(f"    {'-------':>8}  {'------':<12}  {'-----'}")
@@ -258,19 +258,19 @@ def change_policy(op_cur):
         print(f"    {line}")
 
     sql_block("정책 변경 SQL",
-              f"UPDATE alma_private.agent_profiles\n"
+              f"UPDATE argo_private.agent_profiles\n"
               f"SET system_prompt = '[시인 프롬프트]'\n"
               f"WHERE profile_id = (\n"
               f"    SELECT profile_id\n"
-              f"    FROM alma_private.agent_profile_assignments\n"
+              f"    FROM argo_private.agent_profile_assignments\n"
               f"    WHERE role_name = '{AGENT_ROLE}'\n"
               f");")
 
     t_commit = time.perf_counter()
     op_cur.execute("""
-        UPDATE alma_private.agent_profiles SET system_prompt = %s
+        UPDATE argo_private.agent_profiles SET system_prompt = %s
         WHERE profile_id = (
-            SELECT profile_id FROM alma_private.agent_profile_assignments
+            SELECT profile_id FROM argo_private.agent_profile_assignments
             WHERE role_name = %s)
     """, (PROMPT_POET, AGENT_ROLE))
     print(f"  ◀ UPDATE 커밋 완료: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
@@ -289,12 +289,12 @@ def run_step(step_num, session_id, agent_id, task_input,
 
     # 새 태스크 생성 (같은 session_id — 히스토리 연속성 유지)
     op_cur.execute(
-        "INSERT INTO alma_private.tasks (session_id, agent_id, status, input)"
+        "INSERT INTO argo_private.tasks (session_id, agent_id, status, input)"
         " VALUES (%s,%s,'running',%s) RETURNING task_id",
         (session_id, agent_id, task_input))
     task_id = op_cur.fetchone()["task_id"]
     sql_block("태스크 생성 (session_id 유지 → 이전 대화 히스토리 자동 포함)",
-              f"INSERT INTO alma_private.tasks\n"
+              f"INSERT INTO argo_private.tasks\n"
               f"  (session_id, agent_id, status, input)\n"
               f"VALUES ({session_id}, {agent_id}, 'running', '[질문]')\n"
               f"RETURNING task_id;",
@@ -302,9 +302,9 @@ def run_step(step_num, session_id, agent_id, task_input,
 
     # fn_next_step — 에이전트 연결로 호출
     sql_block("fn_next_step 호출",
-              f"SELECT alma_public.fn_next_step({task_id});")
+              f"SELECT argo_public.fn_next_step({task_id});")
     t_ns_call = time.perf_counter()
-    ag_cur.execute("SELECT alma_public.fn_next_step(%s)", (task_id,))
+    ag_cur.execute("SELECT argo_public.fn_next_step(%s)", (task_id,))
     t_ns_return = time.perf_counter()
     directive = ag_cur.fetchone()["fn_next_step"]
 
@@ -365,8 +365,8 @@ def run_step(step_num, session_id, agent_id, task_input,
 
     # fn_submit_result
     sql_block("fn_submit_result 호출",
-              f"SELECT alma_public.fn_submit_result({task_id}, '[LLM 응답]');")
-    ag_cur.execute("SELECT alma_public.fn_submit_result(%s,%s)", (task_id, response))
+              f"SELECT argo_public.fn_submit_result({task_id}, '[LLM 응답]');")
+    ag_cur.execute("SELECT argo_public.fn_submit_result(%s,%s)", (task_id, response))
     sr = ag_cur.fetchone()["fn_submit_result"]
     kv("fn_submit_result 반환값", sr)
 
@@ -379,7 +379,7 @@ def run_step(step_num, session_id, agent_id, task_input,
 # 메인
 # ══════════════════════════════════════════════════════════════════════════════
 def main():
-    header("ALMA E1: 정책 전파 지연 실험")
+    header("argo E1: 정책 전파 지연 실험")
     print(f"  DB      : {DB_CONFIG['dbname']} / {DB_CONFIG['user']} / port {DB_CONFIG['port']}")
     print(f"  모델    : {MODEL}")
     print(f"  에이전트: {AGENT_ROLE}")
@@ -401,20 +401,20 @@ def main():
     # 세션 생성
     header("세션 생성")
     op_cur.execute(
-        "INSERT INTO alma_private.sessions (agent_id, status, goal)"
+        "INSERT INTO argo_private.sessions (agent_id, status, goal)"
         " VALUES (%s,'active','E1 실험 — 실패에 관한 대화, 학자→시인 정책 변경') RETURNING session_id",
         (agent_id,))
     session_id = op_cur.fetchone()["session_id"]
     sql_block("세션 생성",
-              f"INSERT INTO alma_private.sessions (agent_id, status, goal)\n"
+              f"INSERT INTO argo_private.sessions (agent_id, status, goal)\n"
               f"VALUES ({agent_id}, 'active', 'E1 실험 — 실패에 관한 대화')\n"
               f"RETURNING session_id;",
               f"session_id = {session_id}")
 
-    op_cur.execute("SELECT * FROM alma_public.v_session_progress WHERE session_id = %s", (session_id,))
+    op_cur.execute("SELECT * FROM argo_public.v_session_progress WHERE session_id = %s", (session_id,))
     sp = op_cur.fetchone()
     sql_block("v_session_progress 초기 확인",
-              f"SELECT * FROM alma_public.v_session_progress WHERE session_id = {session_id};")
+              f"SELECT * FROM argo_public.v_session_progress WHERE session_id = {session_id};")
     if sp:
         kv("status",      sp["status"])
         kv("total_tasks", sp["total_tasks"])
@@ -454,7 +454,7 @@ def main():
 
     # 세션 완료
     op_cur.execute(
-        "UPDATE alma_private.sessions SET status='completed', completed_at=now()"
+        "UPDATE argo_private.sessions SET status='completed', completed_at=now()"
         " WHERE session_id=%s", (session_id,))
 
     # ── 최종 리포트 ──────────────────────────────────────────────────────────
@@ -464,15 +464,15 @@ def main():
     section("세션 전체 execution_logs")
     op_cur.execute("""
         SELECT t.task_id, el.step_number, el.role, el.content
-        FROM alma_private.execution_logs el
-        JOIN alma_private.tasks t ON t.task_id = el.task_id
+        FROM argo_private.execution_logs el
+        JOIN argo_private.tasks t ON t.task_id = el.task_id
         WHERE t.session_id = %s
         ORDER BY t.task_id, el.step_number""", (session_id,))
     all_logs = op_cur.fetchall()
     sql_block("전체 로그",
               f"SELECT t.task_id, el.step_number, el.role, el.content\n"
-              f"FROM alma_private.execution_logs el\n"
-              f"JOIN alma_private.tasks t ON t.task_id = el.task_id\n"
+              f"FROM argo_private.execution_logs el\n"
+              f"JOIN argo_private.tasks t ON t.task_id = el.task_id\n"
               f"WHERE t.session_id = {session_id}\n"
               f"ORDER BY t.task_id, el.step_number;")
     print(f"    {'task':>6}  {'step':>4}  {'role':<10}  content")
@@ -512,12 +512,12 @@ def main():
     section("메모리 테이블 조회")
     op_cur.execute("""
         SELECT memory_id, session_id, content, created_at
-        FROM alma_private.memory WHERE agent_id = %s
+        FROM argo_private.memory WHERE agent_id = %s
         ORDER BY created_at DESC LIMIT 5""", (agent_id,))
     mems = op_cur.fetchall()
     sql_block("장기 메모리 조회",
               f"SELECT memory_id, session_id, LEFT(content,80), created_at\n"
-              f"FROM alma_private.memory WHERE agent_id = {agent_id}\n"
+              f"FROM argo_private.memory WHERE agent_id = {agent_id}\n"
               f"ORDER BY created_at DESC LIMIT 5;")
     if mems:
         for m in mems:
