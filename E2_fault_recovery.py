@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ALMA 실험 E2: 장애 복구와 상태 일관성 (Fault Recovery & State Consistency)
+argo 실험 E2: 장애 복구와 상태 일관성 (Fault Recovery & State Consistency)
 ==========================================================
 DBaaCP 핵심 검증: 워커 SIGKILL 시 PostgreSQL 트랜잭션이 상태 손실을
 방지하는지, 재시작 워커가 마지막 커밋 지점부터 정확히 재개하는지 검증.
@@ -32,11 +32,11 @@ from datetime import datetime
 # 설정
 # ══════════════════════════════════════════════════════════════════════════════
 DB_CONFIG = dict(
-    dbname  = os.getenv("DB_NAME",     "edb"),
-    user    = os.getenv("DB_USER",     "enterprisedb"),
+    dbname  = os.getenv("DB_NAME",     "postgres"),
+    user    = os.getenv("DB_USER",     "postgres"),
     password= os.getenv("DB_PASSWORD", ""),
     host    = os.getenv("DB_HOST",     "localhost"),
-    port    = int(os.getenv("DB_PORT", "5444")),
+    port    = int(os.getenv("DB_PORT", "5432")),
 )
 AGENT_ROLE = "e2_test_agent"
 AGENT_PW   = os.getenv("AGENT_PASSWORD", "e2_test_pw_2024")
@@ -145,14 +145,14 @@ def setup_agent():
             "system_prompt": PROMPT,
             "max_steps": 20, "max_retries": 2, "password": AGENT_PW,
         }
-        cur.execute("SELECT alma_public.create_agent(%s, %s::jsonb)",
+        cur.execute("SELECT argo_public.create_agent(%s, %s::jsonb)",
                     (AGENT_ROLE, json.dumps(config)))
         res = cur.fetchone()
         sql_block("에이전트 생성",
-                  f"SELECT alma_public.create_agent('{AGENT_ROLE}', '{{...}}'::jsonb);",
+                  f"SELECT argo_public.create_agent('{AGENT_ROLE}', '{{...}}'::jsonb);",
                   list(res.values())[0])
 
-    cur.execute("SELECT agent_id FROM alma_private.agent_meta WHERE role_name = %s", (AGENT_ROLE,))
+    cur.execute("SELECT agent_id FROM argo_private.agent_meta WHERE role_name = %s", (AGENT_ROLE,))
     agent_id = cur.fetchone()["agent_id"]
     kv("agent_id", agent_id)
     op.close()
@@ -164,12 +164,12 @@ def setup_agent():
 def print_exec_logs(op_cur, task_id, session_id):
     op_cur.execute("""
         SELECT step_number, role, content
-        FROM alma_private.execution_logs
+        FROM argo_private.execution_logs
         WHERE task_id = %s ORDER BY step_number""", (task_id,))
     logs = op_cur.fetchall()
     sql_block("execution_logs (현재 태스크)",
               f"SELECT step_number, role, content\n"
-              f"FROM alma_private.execution_logs\n"
+              f"FROM argo_private.execution_logs\n"
               f"WHERE task_id = {task_id} ORDER BY step_number;")
     print(f"    {'step':>4}  {'role':<10}  content")
     print(f"    {'----':>4}  {'----------':<10}  {'-------'}")
@@ -182,12 +182,12 @@ def print_exec_logs(op_cur, task_id, session_id):
 
     op_cur.execute("""
         SELECT task_id, status, LEFT(input, 40) AS input_short
-        FROM alma_private.tasks
+        FROM argo_private.tasks
         WHERE session_id = %s ORDER BY task_id""", (session_id,))
     tasks = op_cur.fetchall()
     sql_block("세션 내 전체 태스크 현황",
               f"SELECT task_id, status, LEFT(input,40)\n"
-              f"FROM alma_private.tasks\n"
+              f"FROM argo_private.tasks\n"
               f"WHERE session_id = {session_id} ORDER BY task_id;")
     print(f"    {'task_id':>8}  {'status':<12}  input")
     print(f"    {'-------':>8}  {'------':<12}  {'-----'}")
@@ -205,11 +205,11 @@ def snapshot_db_state(label, session_id, task_id=None):
     # 태스크 상태
     cur.execute("""
         SELECT task_id, status, LEFT(input,40) AS input_short
-        FROM alma_private.tasks WHERE session_id = %s ORDER BY task_id""", (session_id,))
+        FROM argo_private.tasks WHERE session_id = %s ORDER BY task_id""", (session_id,))
     tasks = cur.fetchall()
     sql_block("tasks 상태 조회",
               f"SELECT task_id, status, LEFT(input,40)\n"
-              f"FROM alma_private.tasks\n"
+              f"FROM argo_private.tasks\n"
               f"WHERE session_id = {session_id} ORDER BY task_id;")
     print(f"    {'task_id':>8}  {'status':<12}  input")
     print(f"    {'-------':>8}  {'------':<12}  {'-----'}")
@@ -219,15 +219,15 @@ def snapshot_db_state(label, session_id, task_id=None):
     # execution_logs 전체 행 수
     cur.execute("""
         SELECT t.task_id, COUNT(el.log_id) AS log_count
-        FROM alma_private.tasks t
-        LEFT JOIN alma_private.execution_logs el ON el.task_id = t.task_id
+        FROM argo_private.tasks t
+        LEFT JOIN argo_private.execution_logs el ON el.task_id = t.task_id
         WHERE t.session_id = %s
         GROUP BY t.task_id ORDER BY t.task_id""", (session_id,))
     log_counts = cur.fetchall()
     sql_block("execution_logs 행 수 확인",
               f"SELECT t.task_id, COUNT(el.log_id) AS log_count\n"
-              f"FROM alma_private.tasks t\n"
-              f"LEFT JOIN alma_private.execution_logs el ON el.task_id = t.task_id\n"
+              f"FROM argo_private.tasks t\n"
+              f"LEFT JOIN argo_private.execution_logs el ON el.task_id = t.task_id\n"
               f"WHERE t.session_id = {session_id}\n"
               f"GROUP BY t.task_id ORDER BY t.task_id;")
     print(f"    {'task_id':>8}  {'log_count':>10}")
@@ -280,13 +280,13 @@ def worker_process(session_id, agent_id, step_tasks, kill_at_step,
             continue
         # 태스크 생성
         op_cur.execute(
-            "INSERT INTO alma_private.tasks (session_id, agent_id, status, input)"
+            "INSERT INTO argo_private.tasks (session_id, agent_id, status, input)"
             " VALUES (%s,%s,'running',%s) RETURNING task_id",
             (session_id, agent_id, task_input))
         task_id = op_cur.fetchone()["task_id"]
 
         # fn_next_step
-        ag_cur.execute("SELECT alma_public.fn_next_step(%s)", (task_id,))
+        ag_cur.execute("SELECT argo_public.fn_next_step(%s)", (task_id,))
         directive = ag_cur.fetchone()["fn_next_step"]
 
         if directive.get("action") == "done":
@@ -307,7 +307,7 @@ def worker_process(session_id, agent_id, step_tasks, kill_at_step,
             time.sleep(10)
 
         # fn_submit_result
-        ag_cur.execute("SELECT alma_public.fn_submit_result(%s,%s)", (task_id, response))
+        ag_cur.execute("SELECT argo_public.fn_submit_result(%s,%s)", (task_id, response))
 
     op_conn.close()
     ag_conn.close()
@@ -320,14 +320,14 @@ def restart_and_recover(session_id, agent_id, step_tasks, op_cur, ag_cur):
 
     # running 상태 태스크 탐색
     detect_sql = f"""SELECT t.task_id, t.status, t.input
-FROM alma_private.tasks t
+FROM argo_private.tasks t
 WHERE t.session_id = {session_id}
   AND t.status = 'running'
 ORDER BY t.task_id;"""
     sql_block("running 상태 태스크 탐색", detect_sql)
     op_cur.execute("""
         SELECT task_id, status, input
-        FROM alma_private.tasks
+        FROM argo_private.tasks
         WHERE session_id = %s AND status = 'running'
         ORDER BY task_id""", (session_id,))
     stuck = op_cur.fetchall()
@@ -346,19 +346,19 @@ ORDER BY t.task_id;"""
 
     # 어느 스텝인지 파악 (execution_logs 행 수로 판단)
     op_cur.execute(
-        "SELECT COUNT(*) AS cnt FROM alma_private.execution_logs WHERE task_id = %s",
+        "SELECT COUNT(*) AS cnt FROM argo_private.execution_logs WHERE task_id = %s",
         (task_id,))
     log_cnt = op_cur.fetchone()["cnt"]
     sql_block("해당 태스크의 execution_logs 행 수",
-              f"SELECT COUNT(*) FROM alma_private.execution_logs\n"
+              f"SELECT COUNT(*) FROM argo_private.execution_logs\n"
               f"WHERE task_id = {task_id};",
               f"{log_cnt}행 — fn_submit_result 미호출 확인 (0이어야 정상)")
 
     # fn_next_step부터 재실행
     print(f"\n  ▶ fn_next_step({task_id}) 재호출 — DB가 최신 상태 기준으로 지시 반환")
     sql_block("fn_next_step 재호출",
-              f"SELECT alma_public.fn_next_step({task_id});")
-    ag_cur.execute("SELECT alma_public.fn_next_step(%s)", (task_id,))
+              f"SELECT argo_public.fn_next_step({task_id});")
+    ag_cur.execute("SELECT argo_public.fn_next_step(%s)", (task_id,))
     directive = ag_cur.fetchone()["fn_next_step"]
     kv("fn_next_step action", directive.get("action"))
 
@@ -407,8 +407,8 @@ ORDER BY t.task_id;"""
 
     # fn_submit_result
     sql_block("fn_submit_result 호출",
-              f"SELECT alma_public.fn_submit_result({task_id}, '[LLM 응답]');")
-    ag_cur.execute("SELECT alma_public.fn_submit_result(%s,%s)", (task_id, response))
+              f"SELECT argo_public.fn_submit_result({task_id}, '[LLM 응답]');")
+    ag_cur.execute("SELECT argo_public.fn_submit_result(%s,%s)", (task_id, response))
     sr = ag_cur.fetchone()["fn_submit_result"]
     kv("fn_submit_result 반환값", sr)
 
@@ -423,19 +423,19 @@ def run_normal_step(step_num, total, session_id, agent_id, task_input,
     print(f"  질문: {task_input}")
 
     op_cur.execute(
-        "INSERT INTO alma_private.tasks (session_id, agent_id, status, input)"
+        "INSERT INTO argo_private.tasks (session_id, agent_id, status, input)"
         " VALUES (%s,%s,'running',%s) RETURNING task_id",
         (session_id, agent_id, task_input))
     task_id = op_cur.fetchone()["task_id"]
     sql_block("태스크 생성",
-              f"INSERT INTO alma_private.tasks (session_id, agent_id, status, input)\n"
+              f"INSERT INTO argo_private.tasks (session_id, agent_id, status, input)\n"
               f"VALUES ({session_id}, {agent_id}, 'running', '[질문]')\n"
               f"RETURNING task_id;",
               f"task_id = {task_id}")
 
     sql_block("fn_next_step 호출",
-              f"SELECT alma_public.fn_next_step({task_id});")
-    ag_cur.execute("SELECT alma_public.fn_next_step(%s)", (task_id,))
+              f"SELECT argo_public.fn_next_step({task_id});")
+    ag_cur.execute("SELECT argo_public.fn_next_step(%s)", (task_id,))
     directive = ag_cur.fetchone()["fn_next_step"]
     kv("action", directive.get("action"))
 
@@ -459,8 +459,8 @@ def run_normal_step(step_num, total, session_id, agent_id, task_input,
         print(f"    raw: {response[:120]}")
 
     sql_block("fn_submit_result 호출",
-              f"SELECT alma_public.fn_submit_result({task_id}, '[LLM 응답]');")
-    ag_cur.execute("SELECT alma_public.fn_submit_result(%s,%s)", (task_id, response))
+              f"SELECT argo_public.fn_submit_result({task_id}, '[LLM 응답]');")
+    ag_cur.execute("SELECT argo_public.fn_submit_result(%s,%s)", (task_id, response))
     sr = ag_cur.fetchone()["fn_submit_result"]
     kv("fn_submit_result 반환값", sr)
 
@@ -473,7 +473,7 @@ def run_normal_step(step_num, total, session_id, agent_id, task_input,
 def main():
     multiprocessing.set_start_method("fork", force=True)
 
-    header("ALMA E2: 장애 복구와 상태 일관성 실험")
+    header("argo E2: 장애 복구와 상태 일관성 실험")
     print(f"  DB      : {DB_CONFIG['dbname']} / {DB_CONFIG['user']} / port {DB_CONFIG['port']}")
     print(f"  모델    : {MODEL}")
     print(f"  에이전트: {AGENT_ROLE}")
@@ -494,12 +494,12 @@ def main():
     # 세션 생성
     header("세션 생성")
     op_cur.execute(
-        "INSERT INTO alma_private.sessions (agent_id, status, goal)"
+        "INSERT INTO argo_private.sessions (agent_id, status, goal)"
         " VALUES (%s,'active','E2 실험 — 실패 회복 상담 대화') RETURNING session_id",
         (agent_id,))
     session_id = op_cur.fetchone()["session_id"]
     sql_block("세션 생성",
-              f"INSERT INTO alma_private.sessions (agent_id, status, goal)\n"
+              f"INSERT INTO argo_private.sessions (agent_id, status, goal)\n"
               f"VALUES ({agent_id}, 'active', 'E2 실험 — 실패 회복 상담 대화')\n"
               f"RETURNING session_id;",
               f"session_id = {session_id}")
@@ -573,23 +573,23 @@ def main():
     # tasks.status 상세 검증
     killed_task_id = signal_data.get("task_id")
     if killed_task_id:
-        op_cur.execute("SELECT task_id, status FROM alma_private.tasks WHERE task_id = %s",
+        op_cur.execute("SELECT task_id, status FROM argo_private.tasks WHERE task_id = %s",
                        (killed_task_id,))
         killed_task = op_cur.fetchone()
         sql_block("SIGKILL된 태스크 상태 직접 조회",
                   f"SELECT task_id, status\n"
-                  f"FROM alma_private.tasks\n"
+                  f"FROM argo_private.tasks\n"
                   f"WHERE task_id = {killed_task_id};")
         kv("task_id", killed_task["task_id"])
         kv("status",  killed_task["status"])
 
         # execution_logs 기록 여부
         op_cur.execute(
-            "SELECT COUNT(*) AS cnt FROM alma_private.execution_logs WHERE task_id = %s",
+            "SELECT COUNT(*) AS cnt FROM argo_private.execution_logs WHERE task_id = %s",
             (killed_task_id,))
         log_cnt = op_cur.fetchone()["cnt"]
         sql_block("SIGKILL된 태스크의 execution_logs 행 수",
-                  f"SELECT COUNT(*) FROM alma_private.execution_logs\n"
+                  f"SELECT COUNT(*) FROM argo_private.execution_logs\n"
                   f"WHERE task_id = {killed_task_id};",
                   f"{log_cnt}행")
 
@@ -614,11 +614,11 @@ def main():
     # execution_logs 재확인
     if killed_task_id_recovered:
         op_cur.execute(
-            "SELECT COUNT(*) AS cnt FROM alma_private.execution_logs WHERE task_id = %s",
+            "SELECT COUNT(*) AS cnt FROM argo_private.execution_logs WHERE task_id = %s",
             (killed_task_id_recovered,))
         log_cnt_after = op_cur.fetchone()["cnt"]
         sql_block("재개 후 execution_logs 행 수",
-                  f"SELECT COUNT(*) FROM alma_private.execution_logs\n"
+                  f"SELECT COUNT(*) FROM argo_private.execution_logs\n"
                   f"WHERE task_id = {killed_task_id_recovered};",
                   f"{log_cnt_after}행")
         if log_cnt_after > 0:
@@ -640,7 +640,7 @@ def main():
 
     # 세션 완료
     op_cur.execute(
-        "UPDATE alma_private.sessions SET status='completed', completed_at=now()"
+        "UPDATE argo_private.sessions SET status='completed', completed_at=now()"
         " WHERE session_id=%s", (session_id,))
 
     # ── 최종 리포트 ──────────────────────────────────────────────────────────
@@ -650,15 +650,15 @@ def main():
     section("세션 전체 execution_logs")
     op_cur.execute("""
         SELECT t.task_id, el.step_number, el.role, el.content
-        FROM alma_private.execution_logs el
-        JOIN alma_private.tasks t ON t.task_id = el.task_id
+        FROM argo_private.execution_logs el
+        JOIN argo_private.tasks t ON t.task_id = el.task_id
         WHERE t.session_id = %s
         ORDER BY t.task_id, el.step_number""", (session_id,))
     all_logs = op_cur.fetchall()
     sql_block("전체 로그",
               f"SELECT t.task_id, el.step_number, el.role, el.content\n"
-              f"FROM alma_private.execution_logs el\n"
-              f"JOIN alma_private.tasks t ON t.task_id = el.task_id\n"
+              f"FROM argo_private.execution_logs el\n"
+              f"JOIN argo_private.tasks t ON t.task_id = el.task_id\n"
               f"WHERE t.session_id = {session_id}\n"
               f"ORDER BY t.task_id, el.step_number;")
     print(f"    {'task':>6}  {'step':>4}  {'role':<10}  content")
@@ -674,12 +674,12 @@ def main():
     section("최종 태스크 현황")
     op_cur.execute("""
         SELECT task_id, status, LEFT(input,45) AS input_short
-        FROM alma_private.tasks WHERE session_id = %s ORDER BY task_id""",
+        FROM argo_private.tasks WHERE session_id = %s ORDER BY task_id""",
         (session_id,))
     final_tasks = op_cur.fetchall()
     sql_block("최종 태스크 현황",
               f"SELECT task_id, status, LEFT(input,45)\n"
-              f"FROM alma_private.tasks\n"
+              f"FROM argo_private.tasks\n"
               f"WHERE session_id = {session_id} ORDER BY task_id;")
     print(f"    {'task_id':>8}  {'status':<12}  input")
     print(f"    {'-------':>8}  {'------':<12}  {'-----'}")
