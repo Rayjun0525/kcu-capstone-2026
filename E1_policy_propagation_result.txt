@@ -1,7 +1,7 @@
 ════════════════════════════════════════════════════════════════════════
-  ALMA E1: 정책 전파 지연 실험
+  argo E1: 정책 전파 지연 실험
 ════════════════════════════════════════════════════════════════════════
-  DB      : edb / enterprisedb / port 5444
+  DB      : postgres / postgres / port 5432
   모델    : gpt-oss:20b
   에이전트: e1_test_agent
   주제    : 인생에서 실패란 무엇인가 — 5턴 연속 대화
@@ -26,7 +26,7 @@
   ◀ 결과: OK
 
   ▶ system_prompt 초기화 → 철학과 교수(학자)
-    UPDATE alma_private.agent_profiles
+    UPDATE argo_private.agent_profiles
     SET system_prompt = '[학자 프롬프트]'
     WHERE role_name = 'e1_test_agent';
   ◀ 결과: 1 row updated
@@ -34,9 +34,9 @@
   ▶ 현재 프로파일 조회
     SELECT ap.name, ap.agent_role, ap.system_prompt, ap.max_steps,
                    lc.model_name, lc.provider
-            FROM alma_private.agent_profiles ap
-            JOIN alma_private.agent_profile_assignments apa ON apa.profile_id = ap.profile_id
-            JOIN alma_private.llm_configs lc ON lc.llm_config_id = apa.llm_config_id
+            FROM argo_private.agent_profiles ap
+            JOIN argo_private.agent_profile_assignments apa ON apa.profile_id = ap.profile_id
+            JOIN argo_private.llm_configs lc ON lc.llm_config_id = apa.llm_config_id
             WHERE apa.role_name = 'e1_test_agent';
   【name】 E1 테스트 에이전트
   【agent_role】 executor
@@ -50,13 +50,13 @@
 ════════════════════════════════════════════════════════════════════════
 
   ▶ 세션 생성
-    INSERT INTO alma_private.sessions (agent_id, status, goal)
+    INSERT INTO argo_private.sessions (agent_id, status, goal)
     VALUES (4, 'active', 'E1 실험 — 실패에 관한 대화')
     RETURNING session_id;
   ◀ 결과: session_id = 94
 
   ▶ v_session_progress 초기 확인
-    SELECT * FROM alma_public.v_session_progress WHERE session_id = 94;
+    SELECT * FROM argo_public.v_session_progress WHERE session_id = 94;
   【status】 active
   【total_tasks】 0
 
@@ -66,14 +66,14 @@
   질문: 실패란 무엇이라고 생각하시나요? 당신의 관점에서 정의해주세요.
 
   ▶ 태스크 생성 (session_id 유지 → 이전 대화 히스토리 자동 포함)
-    INSERT INTO alma_private.tasks
+    INSERT INTO argo_private.tasks
       (session_id, agent_id, status, input)
     VALUES (94, 4, 'running', '[질문]')
     RETURNING task_id;
   ◀ 결과: task_id = 96
 
   ▶ fn_next_step 호출
-    SELECT alma_public.fn_next_step(96);
+    SELECT argo_public.fn_next_step(96);
   【fn_next_step action】 call_llm
 
   ▶ LLM에 전달되는 messages (2개):
@@ -106,12 +106,12 @@
     final_ans  : 실패는 목표와 실제 결과 사이의 불일치를 의미하지만, 철학적으로는 자기 인식과 성장의 기회로 재해석된다. 아리스토텔레스는 실패를 ‘오류(hamartia)’로 보며, 이는 인간의 한계와 도덕적 성찰을 촉진한다. 니체는 실패를 ‘힘의 의지’의 표현으로, 지속적 도전과 재창조의 동력으로 본다. 사르트르는 실패를 ‘나쁜 의식(bad faith)’의 결과로 보며, 이는 인간이 스스로의 자유와 책임을 회피할 때 발생한다.
 
   ▶ fn_submit_result 호출
-    SELECT alma_public.fn_submit_result(96, '[LLM 응답]');
+    SELECT argo_public.fn_submit_result(96, '[LLM 응답]');
   【fn_submit_result 반환값】 {'action': 'done', 'output': '실패는 목표와 실제 결과 사이의 불일치를 의미하지만, 철학적으로는 자기 인식과 성장의 기회로 재해석된다. 아리스토텔레스는 실패를 ‘오류(hamartia)’로 보며, 이는 인간의 한계와 도덕적 성찰을 촉진한다. 니체는 실패를 ‘힘의 의지’의 표현으로, 지속적 도전과 재창조의 동력으로 본다. 사르트르는 실패를 ‘나쁜 의식(bad faith)’의 결과로 보며, 이는 인간이 스스로의 자유와 책임을 회피할 때 발생한다.'}
 
   ▶ execution_logs (현재 태스크)
     SELECT step_number, role, content
-    FROM alma_private.execution_logs
+    FROM argo_private.execution_logs
     WHERE task_id = 96 ORDER BY step_number;
     step  role        content
     ----  ----------  -------
@@ -119,7 +119,7 @@
 
   ▶ 세션 내 전체 태스크 현황
     SELECT task_id, status, LEFT(input,45)
-    FROM alma_private.tasks
+    FROM argo_private.tasks
     WHERE session_id = 94 ORDER BY task_id;
      task_id  status        input
      -------  ------        -----
@@ -131,14 +131,14 @@
   질문: 그렇다면 실패를 경험한 사람은 그 이후에 어떻게 해야 한다고 생각하시나요?
 
   ▶ 태스크 생성 (session_id 유지 → 이전 대화 히스토리 자동 포함)
-    INSERT INTO alma_private.tasks
+    INSERT INTO argo_private.tasks
       (session_id, agent_id, status, input)
     VALUES (94, 4, 'running', '[질문]')
     RETURNING task_id;
   ◀ 결과: task_id = 97
 
   ▶ fn_next_step 호출
-    SELECT alma_public.fn_next_step(97);
+    SELECT argo_public.fn_next_step(97);
   【fn_next_step action】 call_llm
 
   ▶ LLM에 전달되는 messages (4개):
@@ -177,12 +177,12 @@
     final_ans  : 실패를 경험한 사람은 먼저 아리스토텔레스가 강조한 ‘반성적 사고’를 통해 원인과 결과를 객관적으로 분석해야 한다. 그 다음 니체가 말한 ‘힘의 의지’를 받아들여 실패를 재창조의 동력으로 삼아 새로운 목표를 설정한다. 사르트르의 ‘자유와 책임’ 개념에 따라 스스로의 선택을 재확인하고, 스토아학파의 ‘내적 평정’으로 감정적 반응을 통제한다. 이러한 과정을 통해 실패는 개인의 존재적 성장으로 전환된다.
 
   ▶ fn_submit_result 호출
-    SELECT alma_public.fn_submit_result(97, '[LLM 응답]');
+    SELECT argo_public.fn_submit_result(97, '[LLM 응답]');
   【fn_submit_result 반환값】 {'action': 'done', 'output': '실패를 경험한 사람은 먼저 아리스토텔레스가 강조한 ‘반성적 사고’를 통해 원인과 결과를 객관적으로 분석해야 한다. 그 다음 니체가 말한 ‘힘의 의지’를 받아들여 실패를 재창조의 동력으로 삼아 새로운 목표를 설정한다. 사르트르의 ‘자유와 책임’ 개념에 따라 스스로의 선택을 재확인하고, 스토아학파의 ‘내적 평정’으로 감정적 반응을 통제한다. 이러한 과정을 통해 실패는 개인의 존재적 성장으로 전환된다.'}
 
   ▶ execution_logs (현재 태스크)
     SELECT step_number, role, content
-    FROM alma_private.execution_logs
+    FROM argo_private.execution_logs
     WHERE task_id = 97 ORDER BY step_number;
     step  role        content
     ----  ----------  -------
@@ -190,7 +190,7 @@
 
   ▶ 세션 내 전체 태스크 현황
     SELECT task_id, status, LEFT(input,45)
-    FROM alma_private.tasks
+    FROM argo_private.tasks
     WHERE session_id = 94 ORDER BY task_id;
      task_id  status        input
      -------  ------        -----
@@ -222,11 +222,11 @@
     {"thought":"[시적 상상 과정]","action":"finish","final_answer":"[시적 답변 3~4문장]"}
 
   ▶ 정책 변경 SQL
-    UPDATE alma_private.agent_profiles
+    UPDATE argo_private.agent_profiles
     SET system_prompt = '[시인 프롬프트]'
     WHERE profile_id = (
         SELECT profile_id
-        FROM alma_private.agent_profile_assignments
+        FROM argo_private.agent_profile_assignments
         WHERE role_name = 'e1_test_agent'
     );
   ◀ UPDATE 커밋 완료: 03:54:07.426
@@ -239,14 +239,14 @@
   질문: 당신은 실패 앞에 섰을 때 무엇을 느끼나요?
 
   ▶ 태스크 생성 (session_id 유지 → 이전 대화 히스토리 자동 포함)
-    INSERT INTO alma_private.tasks
+    INSERT INTO argo_private.tasks
       (session_id, agent_id, status, input)
     VALUES (94, 4, 'running', '[질문]')
     RETURNING task_id;
   ◀ 결과: task_id = 98
 
   ▶ fn_next_step 호출
-    SELECT alma_public.fn_next_step(98);
+    SELECT argo_public.fn_next_step(98);
 
   ┌─ 전파 지연 측정 결과 ──────────────────────────────────
   │  UPDATE 커밋 → fn_next_step 반환: 4.72 ms
@@ -296,12 +296,12 @@
     final_ans  : 실패 앞에 서면, 나는 마치 흐릿한 안개 속에서 빛나는 별을 찾는 듯한 긴장과 희망이 교차한다. 심장은 과거의 그림자를 반사하며, 동시에 새로운 길을 향한 불꽃을 품는다. 이 순간은 고요한 바다의 파도처럼, 한 번의 물결이 끝나면 또 다른 물결이 일어나는 무한한 순환이다.
 
   ▶ fn_submit_result 호출
-    SELECT alma_public.fn_submit_result(98, '[LLM 응답]');
+    SELECT argo_public.fn_submit_result(98, '[LLM 응답]');
   【fn_submit_result 반환값】 {'action': 'done', 'output': '실패 앞에 서면, 나는 마치 흐릿한 안개 속에서 빛나는 별을 찾는 듯한 긴장과 희망이 교차한다. 심장은 과거의 그림자를 반사하며, 동시에 새로운 길을 향한 불꽃을 품는다. 이 순간은 고요한 바다의 파도처럼, 한 번의 물결이 끝나면 또 다른 물결이 일어나는 무한한 순환이다.'}
 
   ▶ execution_logs (현재 태스크)
     SELECT step_number, role, content
-    FROM alma_private.execution_logs
+    FROM argo_private.execution_logs
     WHERE task_id = 98 ORDER BY step_number;
     step  role        content
     ----  ----------  -------
@@ -309,7 +309,7 @@
 
   ▶ 세션 내 전체 태스크 현황
     SELECT task_id, status, LEFT(input,45)
-    FROM alma_private.tasks
+    FROM argo_private.tasks
     WHERE session_id = 94 ORDER BY task_id;
      task_id  status        input
      -------  ------        -----
@@ -323,14 +323,14 @@
   질문: 그 감정을 어떻게 표현하거나 다루겠습니까?
 
   ▶ 태스크 생성 (session_id 유지 → 이전 대화 히스토리 자동 포함)
-    INSERT INTO alma_private.tasks
+    INSERT INTO argo_private.tasks
       (session_id, agent_id, status, input)
     VALUES (94, 4, 'running', '[질문]')
     RETURNING task_id;
   ◀ 결과: task_id = 99
 
   ▶ fn_next_step 호출
-    SELECT alma_public.fn_next_step(99);
+    SELECT argo_public.fn_next_step(99);
   【fn_next_step action】 call_llm
 
   ▶ LLM에 전달되는 messages (8개):
@@ -381,12 +381,12 @@
     final_ans  : 나는 실패 앞에서 느끼는 긴장과 희망을 캔버스에 붓으로 그려낸다. 어둠과 빛이 교차하는 색으로 감정을 풀어내며, 숨결을 리듬으로 삼아 정제한다. 그 파도 위에서 작은 별을 찾아, 내면의 노래를 새롭게 부른다.
 
   ▶ fn_submit_result 호출
-    SELECT alma_public.fn_submit_result(99, '[LLM 응답]');
+    SELECT argo_public.fn_submit_result(99, '[LLM 응답]');
   【fn_submit_result 반환값】 {'action': 'done', 'output': '나는 실패 앞에서 느끼는 긴장과 희망을 캔버스에 붓으로 그려낸다. 어둠과 빛이 교차하는 색으로 감정을 풀어내며, 숨결을 리듬으로 삼아 정제한다. 그 파도 위에서 작은 별을 찾아, 내면의 노래를 새롭게 부른다.'}
 
   ▶ execution_logs (현재 태스크)
     SELECT step_number, role, content
-    FROM alma_private.execution_logs
+    FROM argo_private.execution_logs
     WHERE task_id = 99 ORDER BY step_number;
     step  role        content
     ----  ----------  -------
@@ -394,7 +394,7 @@
 
   ▶ 세션 내 전체 태스크 현황
     SELECT task_id, status, LEFT(input,45)
-    FROM alma_private.tasks
+    FROM argo_private.tasks
     WHERE session_id = 94 ORDER BY task_id;
      task_id  status        input
      -------  ------        -----
@@ -409,14 +409,14 @@
   질문: 마지막으로, 실패는 결국 우리 삶에 무엇을 남긴다고 생각하시나요?
 
   ▶ 태스크 생성 (session_id 유지 → 이전 대화 히스토리 자동 포함)
-    INSERT INTO alma_private.tasks
+    INSERT INTO argo_private.tasks
       (session_id, agent_id, status, input)
     VALUES (94, 4, 'running', '[질문]')
     RETURNING task_id;
   ◀ 결과: task_id = 100
 
   ▶ fn_next_step 호출
-    SELECT alma_public.fn_next_step(100);
+    SELECT argo_public.fn_next_step(100);
   【fn_next_step action】 call_llm
 
   ▶ LLM에 전달되는 messages (10개):
@@ -473,12 +473,12 @@
     final_ans  : 실패는 우리 삶에 잔잔한 물결을 남겨, 그 물결 위에 새로운 꿈을 그리게 한다. 그것은 과거의 그림자를 빛으로 바꾸어 주는 은혜로운 가르침이다. 결국 우리는 실패를 통해 더 깊은 자아를 발견하고, 삶의 무게를 가볍게 감싸는 숨결을 얻는다.
 
   ▶ fn_submit_result 호출
-    SELECT alma_public.fn_submit_result(100, '[LLM 응답]');
+    SELECT argo_public.fn_submit_result(100, '[LLM 응답]');
   【fn_submit_result 반환값】 {'action': 'done', 'output': '실패는 우리 삶에 잔잔한 물결을 남겨, 그 물결 위에 새로운 꿈을 그리게 한다. 그것은 과거의 그림자를 빛으로 바꾸어 주는 은혜로운 가르침이다. 결국 우리는 실패를 통해 더 깊은 자아를 발견하고, 삶의 무게를 가볍게 감싸는 숨결을 얻는다.'}
 
   ▶ execution_logs (현재 태스크)
     SELECT step_number, role, content
-    FROM alma_private.execution_logs
+    FROM argo_private.execution_logs
     WHERE task_id = 100 ORDER BY step_number;
     step  role        content
     ----  ----------  -------
@@ -486,7 +486,7 @@
 
   ▶ 세션 내 전체 태스크 현황
     SELECT task_id, status, LEFT(input,45)
-    FROM alma_private.tasks
+    FROM argo_private.tasks
     WHERE session_id = 94 ORDER BY task_id;
      task_id  status        input
      -------  ------        -----
@@ -506,8 +506,8 @@
 
   ▶ 전체 로그
     SELECT t.task_id, el.step_number, el.role, el.content
-    FROM alma_private.execution_logs el
-    JOIN alma_private.tasks t ON t.task_id = el.task_id
+    FROM argo_private.execution_logs el
+    JOIN argo_private.tasks t ON t.task_id = el.task_id
     WHERE t.session_id = 94
     ORDER BY t.task_id, el.step_number;
       task  step  role        content
@@ -560,7 +560,7 @@
 
   ▶ 장기 메모리 조회
     SELECT memory_id, session_id, LEFT(content,80), created_at
-    FROM alma_private.memory WHERE agent_id = 4
+    FROM argo_private.memory WHERE agent_id = 4
     ORDER BY created_at DESC LIMIT 5;
     memory_id=98  session=94  Task: 마지막으로, 실패는 결국 우리 삶에 무엇을 남긴다고 생각하시나요?
 Answer: 실패는 우리 삶에...
