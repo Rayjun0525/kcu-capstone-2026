@@ -1,0 +1,5 @@
+comment = 'ARGO — Agent Lifecycle Manager: PostgreSQL-native AI agent framework'
+default_version = '1.0'
+requires = 'vector,plpython3u,pgcrypto'
+relocatable = false
+superuser = true
