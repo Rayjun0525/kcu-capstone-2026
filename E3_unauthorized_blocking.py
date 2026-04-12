@@ -29,11 +29,11 @@ import psycopg2, psycopg2.extras
 # 설정
 # ══════════════════════════════════════════════════════════════════════════════
 DB_CONFIG = dict(
-    dbname  = os.getenv("DB_NAME",     "edb"),
-    user    = os.getenv("DB_USER",     "enterprisedb"),
+    dbname  = os.getenv("DB_NAME",     "postgres"),
+    user    = os.getenv("DB_USER",     "postgres"),
     password= os.getenv("DB_PASSWORD", ""),
     host    = os.getenv("DB_HOST",     "localhost"),
-    port    = int(os.getenv("DB_PORT", "5444")),
+    port    = int(os.getenv("DB_PORT", "5432")),
 )
 AGENT_A_ROLE = "e3_agent_a"
 AGENT_B_ROLE = "e3_agent_b"
